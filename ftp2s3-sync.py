@@ -14,7 +14,6 @@ def move_file(ftp_conn: FTP, fs: S3FileSystem, file: Path, size: int, ftp_root: 
     if fs.exists(key_id):
         # check if we need to replace, check sizes
         if size == fs.size(key_id):
-            print("%s already uploaded" % key_id)
             return
 
     if not dry_run:
@@ -82,3 +81,4 @@ if __name__ == "__main__":
         bucket=args.bucket,
         dry_run=args.dryrun,
     )
+    print("Sync complete")
