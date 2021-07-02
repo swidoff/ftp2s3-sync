@@ -6,43 +6,42 @@ from pathlib import Path
 from s3fs import S3FileSystem
 
 
-def move_file(ftp_conn: FTP, fs: S3FileSystem, file: Path, size: int, ftp_root: str, fs_root: str, dry_run: bool):
-    filepath = file.relative_to(ftp_root)
+def sync_dir(ftp_conn: FTP, fs: S3FileSystem, ftp_dir: Path, ftp_root: str, fs_root: str, dry_run: bool):
+    print(f"Syncing {ftp_dir}")
+    if str(ftp_dir) == ftp_root:
+        fs_dir = fs_root
+    else:
+        fs_dir = f"{fs_root}/{ftp_dir.relative_to(ftp_root)}/"
 
-    key_id = f"{fs_root}/{filepath}"
+    ftp_conn.cwd(str(ftp_dir))
+    ftp_ls = [(filename, int(props["size"]), props["type"] == "dir") for filename, props in ftp_conn.mlsd()]
+    fs_ls = {str(Path(entry["Key"]).relative_to(fs_dir)): int(entry["Size"]) for entry in fs.listdir(fs_dir)}
 
-    if fs.exists(key_id):
-        # check if we need to replace, check sizes
-        if size == fs.size(key_id):
-            return
+    for filename, size, is_dir in ftp_ls:
+        file = ftp_dir / filename
+        if is_dir:
+            sync_dir(ftp_conn, fs, file, ftp_root, fs_root, dry_run)
+        elif filename not in fs_ls or size != fs_ls[filename]:
+            filepath = file.relative_to(ftp_root)
+            key_id = f"{fs_root}/{filepath}"
+            print(f"Syncing {file} to s3://{key_id} ({math.ceil(size / 1024 / 1024)} MB)")
 
-    if not dry_run:
-        with tempfile.NamedTemporaryFile(mode="rb+") as tmp:
-            i = [1]
-            total = [0]
+            if not dry_run:
+                with tempfile.NamedTemporaryFile(mode="rb+") as tmp:
+                    i = [1]
+                    total = [0]
 
-            def write_chunk(chunk):
-                chunk_size = len(chunk)
-                total[0] += chunk_size
-                tmp.write(chunk)
-                i[0] += 1
+                    def write_chunk(chunk):
+                        chunk_size = len(chunk)
+                        total[0] += chunk_size
+                        tmp.write(chunk)
+                        i[0] += 1
 
-            print(f"{key_id} downloading from FTP ({math.ceil(size / 1024 / 1024)} MB)")
-            ftp_conn.retrbinary(f"RETR {str(file)}", write_chunk, blocksize=12428800)
-            tmp.flush()
-            print(f"{key_id} uploading to S3 ({math.ceil(size / 1024 / 1024)} MB)")
-            fs.put_file(tmp.name, key_id)
-
-
-def sync_dir(ftp_conn: FTP, fs: S3FileSystem, directory: Path, ftp_root: str, key_root: str, dry_run: bool):
-    ftp_conn.cwd(str(directory))
-    for filename, props in ftp_conn.mlsd():
-        file = directory / filename
-        if props["type"] == "dir":
-            sync_dir(ftp_conn, fs, file, ftp_root, key_root, dry_run)
-        else:
-            move_file(ftp_conn, fs, file, int(props["size"]), ftp_root, key_root, dry_run)
-
+                    print(f"Downloading from FTP {file}")
+                    ftp_conn.retrbinary(f"RETR {str(file)}", write_chunk, blocksize=12428800)
+                    tmp.flush()
+                    print(f"Uploading to S3 {key_id}")
+                    fs.put_file(tmp.name, key_id)
 
 def sync(
     ftp_host: str,
