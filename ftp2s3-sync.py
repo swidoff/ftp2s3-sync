@@ -1,5 +1,7 @@
 import math
 import tempfile
+import time
+from contextlib import contextmanager
 from ftplib import FTP
 from pathlib import Path
 
@@ -17,7 +19,7 @@ def sync_dir(ftp_conn: FTP, fs: S3FileSystem, ftp_dir: Path, ftp_root: str, fs_r
     ftp_ls = [(filename, int(props["size"]), props["type"] == "dir") for filename, props in ftp_conn.mlsd()]
     fs_ls = {str(Path(entry["Key"]).relative_to(fs_dir)): int(entry["Size"]) for entry in fs.listdir(fs_dir)}
 
-    for filename, size, is_dir in ftp_ls:
+    for filename, size, is_dir in sorted(ftp_ls):
         file = ftp_dir / filename
         if is_dir:
             sync_dir(ftp_conn, fs, file, ftp_root, fs_root, dry_run)
@@ -37,11 +39,12 @@ def sync_dir(ftp_conn: FTP, fs: S3FileSystem, ftp_dir: Path, ftp_root: str, fs_r
                         tmp.write(chunk)
                         i[0] += 1
 
-                    print(f"Downloading from FTP {file}")
-                    ftp_conn.retrbinary(f"RETR {str(file)}", write_chunk, blocksize=12428800)
-                    tmp.flush()
-                    print(f"Uploading to S3 {key_id}")
-                    fs.put_file(tmp.name, key_id)
+                    with log_time(f"Downloading from FTP {file}"):
+                        ftp_conn.retrbinary(f"RETR {str(file)}", write_chunk, blocksize=12428800)
+                        tmp.flush()
+
+                    with log_time(f"Uploading to S3 {key_id}"):
+                        fs.put_file(tmp.name, key_id)
 
 def sync(
     ftp_host: str,
@@ -58,6 +61,17 @@ def sync(
         sync_dir(ftp_conn, fs, Path(ftp_dir), ftp_dir, bucket, dry_run)
     finally:
         ftp_conn.close()
+
+
+@contextmanager
+def log_time(msg: str):
+    start = time.time()
+    try:
+        print(f"{msg}...", end="")
+        yield
+    finally:
+        duration = time.time() - start
+        print(f"{duration * 1000}:0.02f ms")
 
 
 if __name__ == "__main__":
