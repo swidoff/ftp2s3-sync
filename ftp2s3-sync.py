@@ -72,7 +72,7 @@ def log_time(msg: str):
         yield
     finally:
         duration = time.time() - start
-        print(f"{(duration * 1000000):0.02f} s")
+        print(f"{duration} s")
 
 
 if __name__ == "__main__":
