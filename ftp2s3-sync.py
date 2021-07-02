@@ -68,7 +68,7 @@ def sync(
 def log_time(msg: str):
     start = time.time()
     try:
-        print(f"{msg}...", end="")
+        print(f"{msg}...", end="", flush=True)
         yield
     finally:
         duration = time.time() - start
