@@ -46,6 +46,7 @@ def sync_dir(ftp_conn: FTP, fs: S3FileSystem, ftp_dir: Path, ftp_root: str, fs_r
                     with log_time(f"Uploading to S3 {key_id}"):
                         fs.put_file(tmp.name, key_id)
 
+
 def sync(
     ftp_host: str,
     ftp_username: str,
@@ -71,7 +72,7 @@ def log_time(msg: str):
         yield
     finally:
         duration = time.time() - start
-        print(f"{duration * 1000}:0.02f ms")
+        print(f"{(duration * 1000):0.02f} ms")
 
 
 if __name__ == "__main__":
